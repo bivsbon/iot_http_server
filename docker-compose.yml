@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  mail_sender:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: fastapi_app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongodb
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    environment:
+      MONGO_INITDB_DATABASE: mail_sender_db
+    ports:
+      - "27018:27017"
+    volumes:
+      - ./mongodb_data:/data/db  # Mount MongoDB data directory to the host

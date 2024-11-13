@@ -1,0 +1,4 @@
+fastapi[standard]
+fastapi-mqtt
+motor
+python-dotenv
