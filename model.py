@@ -15,6 +15,11 @@ class MailingTask(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     device_id: str
     # type_id: str
-    state: dict
+    data: dict
     create_time: datetime = Field(default_factory=datetime.now)
     last_update: datetime = Field(default_factory=datetime.now)
+
+
+class DeviceUpdate(BaseModel):
+    device_id: str
+    data: dict

@@ -1,4 +1,5 @@
 import json
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -10,6 +11,7 @@ from motor import motor_asyncio
 from datetime import datetime
 
 import config
+import model
 
 mqtt_config = MQTTConfig(ssl=True)
 mqtt_config.host = config.MQTT_HOST
@@ -48,7 +50,7 @@ async def home_message(client: MQTTClient, topic: str, payload: bytes, qos: int,
         update={
             "$set": {
                 "device_id": payload["device_id"],
-                "state": {"active": payload["data"]["state"]},
+                "data": payload["data"],
                 "last_update": datetime.now()
             }
         },
@@ -79,3 +81,25 @@ async def func():
     print("publishing....")
     fast_mqtt.publish("smart_home/device_data", "Hello from Fastapi")  # publishing mqtt topic
     return {"result": True, "message": "Published"}
+
+
+@app.post("/device-update")
+async def device_update(device_update: model.DeviceUpdate):
+    result = await device_collection.find_one_and_update(
+        filter={"device_id": device_update.device_id},
+        update={
+            "$set": {
+                "device_id": device_update,
+                "data": device_update.data,
+                "last_update": datetime.now()
+            }
+        },
+        upsert=True,
+        return_document=True  # Return the updated document, not the original
+    )
+    msg = {
+        "device_id": device_update.device_id,
+        "time": time.time(),
+        "data": device_update.data
+    }
+    fast_mqtt.publish(f"smart_home/device/{result['device_id']}", msg)
