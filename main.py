@@ -89,7 +89,7 @@ async def device_update(device_update: model.DeviceUpdate):
         filter={"device_id": device_update.device_id},
         update={
             "$set": {
-                "device_id": device_update,
+                "device_id": device_update.device_id,
                 "data": device_update.data,
                 "last_update": datetime.now()
             }
@@ -103,3 +103,4 @@ async def device_update(device_update: model.DeviceUpdate):
         "data": device_update.data
     }
     fast_mqtt.publish(f"smart_home/device/{result['device_id']}", msg)
+    return result
