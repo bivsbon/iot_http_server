@@ -21,5 +21,6 @@ class MailingTask(BaseModel):
 
 
 class DeviceUpdate(BaseModel):
-    device_id: str
+    device_id: int
+    time: int
     data: dict
