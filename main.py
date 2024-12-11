@@ -3,12 +3,16 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Body, Query, HTTPException
 from gmqtt import Client as MQTTClient
 
 from fastapi_mqtt import FastMQTT, MQTTConfig
+from fastapi.middleware.cors import CORSMiddleware
 from motor import motor_asyncio
 from datetime import datetime
+
+from starlette import status
+from starlette.requests import Request
 
 import config
 import model
@@ -31,9 +35,18 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(lifespan=_lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 mongodb_client = motor_asyncio.AsyncIOMotorClient(config.MONGODB_URL)
 db = mongodb_client.get_database(config.DATABASE)
 device_collection = db.get_collection("devices")
+user_collection = db.get_collection("users")
 
 
 @fast_mqtt.on_connect()
@@ -104,3 +117,47 @@ async def device_update(device_update: model.DeviceUpdate):
     }
     fast_mqtt.publish(f"smart_home/device/{result['device_id']}", msg)
     return result
+
+
+@app.post("/user/register",
+          response_description="Register",
+          response_model=model.User,
+          status_code=status.HTTP_201_CREATED,
+          response_model_by_alias=False)
+async def create_user(request: Request, user: model.User = Body(...)):
+    if config.API_KEY != request.query_params.get("api_key"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid API key"
+        )
+
+    new_user = await user_collection.insert_one(
+        user.model_dump(by_alias=True, exclude=["id"])
+    )
+    created_user = await user_collection.find_one(
+        {"_id": new_user.inserted_id}
+    )
+    return created_user
+
+
+@app.post("/user/login",
+          response_description="Login",
+          response_model=model.UserResponse,
+          status_code=status.HTTP_200_OK,
+          response_model_by_alias=False)
+async def create_user(request: Request, user: model.User = Body(...)):
+    if config.API_KEY != request.query_params.get("api_key"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid API key"
+        )
+    found_user = await user_collection.find_one(
+        {"username": user.username}
+    )
+
+    if found_user is None:
+        return model.UserResponse(status=1, message="Wrong username")
+    elif found_user["password"] != user.password:
+        return model.UserResponse(status=2, message="Wrong password")
+    else:
+        return model.UserResponse(status=0, message="Success")

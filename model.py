@@ -8,7 +8,7 @@ from datetime import datetime
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
 
-class MailingTask(BaseModel):
+class Device(BaseModel):
     # The primary key for the UserEvent, stored as a `str` on the instance.
     # This will be aliased to `_id` when sent to MongoDB,
     # but provided as `id` in the API requests and responses.
@@ -18,6 +18,20 @@ class MailingTask(BaseModel):
     data: dict
     create_time: datetime = Field(default_factory=datetime.now)
     last_update: datetime = Field(default_factory=datetime.now)
+
+
+class User(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    username: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    status: int
+    message: str
+
+
+# ------------------------- Request models ---------------------------------
 
 
 class DeviceUpdate(BaseModel):
