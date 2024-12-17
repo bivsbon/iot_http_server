@@ -47,6 +47,15 @@ mongodb_client = motor_asyncio.AsyncIOMotorClient(config.MONGODB_URL)
 db = mongodb_client.get_database(config.DATABASE)
 device_collection = db.get_collection("devices")
 user_collection = db.get_collection("users")
+home_collection = db.get_collection("homes")
+
+
+async def validate_request(request):
+    if config.API_KEY != request.query_params.get("api_key"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid API key"
+        )
 
 
 @fast_mqtt.on_connect()
@@ -89,21 +98,14 @@ def subscribe(client: MQTTClient, mid: int, qos: int, properties: Any):
     print("subscribed", client, mid, qos, properties)
 
 
-@app.get("/test")
-async def func():
-    print("publishing....")
-    fast_mqtt.publish("smart_home/device_data", "Hello from Fastapi")  # publishing mqtt topic
-    return {"result": True, "message": "Published"}
-
-
-@app.post("/device-update")
-async def device_update(device_update: model.DeviceUpdate):
+@app.post("/device/update")
+async def device_update(device: model.Device = Body(...)):
     result = await device_collection.find_one_and_update(
-        filter={"device_id": device_update.device_id},
+        filter={"device_id": device.device_id},
         update={
             "$set": {
-                "device_id": device_update.device_id,
-                "data": device_update.data,
+                "device_id": device.device_id,
+                "data": device.data,
                 "last_update": datetime.now()
             }
         },
@@ -121,15 +123,11 @@ async def device_update(device_update: model.DeviceUpdate):
 
 @app.post("/user/register",
           response_description="Register",
-          response_model=model.User,
+          response_model=model.UserResponse,
           status_code=status.HTTP_201_CREATED,
           response_model_by_alias=False)
 async def create_user(request: Request, user: model.User = Body(...)):
-    if config.API_KEY != request.query_params.get("api_key"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid API key"
-        )
+    await validate_request(request)
 
     new_user = await user_collection.insert_one(
         user.model_dump(by_alias=True, exclude=["id"])
@@ -137,7 +135,7 @@ async def create_user(request: Request, user: model.User = Body(...)):
     created_user = await user_collection.find_one(
         {"_id": new_user.inserted_id}
     )
-    return created_user
+    return model.UserResponse(status=0, message="Success")
 
 
 @app.post("/user/login",
@@ -146,11 +144,8 @@ async def create_user(request: Request, user: model.User = Body(...)):
           status_code=status.HTTP_200_OK,
           response_model_by_alias=False)
 async def create_user(request: Request, user: model.User = Body(...)):
-    if config.API_KEY != request.query_params.get("api_key"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid API key"
-        )
+    await validate_request(request)
+
     found_user = await user_collection.find_one(
         {"username": user.username}
     )
@@ -161,3 +156,63 @@ async def create_user(request: Request, user: model.User = Body(...)):
         return model.UserResponse(status=2, message="Wrong password")
     else:
         return model.UserResponse(status=0, message="Success")
+
+
+@app.post("/home/add",
+          response_description="Add a home",
+          response_model=model.Home,
+          status_code=status.HTTP_201_CREATED,
+          response_model_by_alias=False)
+async def create_user(request: Request, home: model.Home = Body(...)):
+    await validate_request(request)
+
+    new_home = await home_collection.insert_one(
+        home.model_dump(by_alias=True, exclude=["id"])
+    )
+    created_home = await home_collection.find_one(
+        {"_id": new_home.inserted_id}
+    )
+    return created_home
+
+
+@app.get("/home/{home_id}",
+         response_description="Get a home",
+         response_model=model.Home,
+         status_code=status.HTTP_200_OK,
+         response_model_by_alias=False)
+async def create_user(request: Request, home_id: str):
+    await validate_request(request)
+
+    return home_collection.find_one(
+        {"_id": home_id}
+    )
+
+
+@app.post("/device/add",
+          response_description="Add a device to a home",
+          response_model=model.Device,
+          status_code=status.HTTP_201_CREATED,
+          response_model_by_alias=False)
+async def create_user(request: Request, device: model.Home = Body(...)):
+    await validate_request(request)
+
+    new_device = await device_collection.insert_one(
+        device.model_dump(by_alias=True, exclude=["id"])
+    )
+    created_device = await device_collection.find_one(
+        {"_id": new_device.inserted_id}
+    )
+    return created_device
+
+
+@app.get("/device/{device_id}",
+         response_description="Get a device",
+         response_model=model.Device,
+         status_code=status.HTTP_200_OK,
+         response_model_by_alias=False)
+async def create_user(request: Request, home_id: str):
+    await validate_request(request)
+
+    return device_collection.find_one(
+        {"_id": home_id}
+    )

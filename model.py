@@ -15,7 +15,7 @@ class Device(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     device_id: str
     # type_id: str
-    data: dict
+    data: dict = {}
     create_time: datetime = Field(default_factory=datetime.now)
     last_update: datetime = Field(default_factory=datetime.now)
 
@@ -24,6 +24,17 @@ class User(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     username: str
     password: str
+    create_time: datetime = Field(default_factory=datetime.now)
+    last_update: datetime = Field(default_factory=datetime.now)
+
+
+class Home(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    owner: str
+    members: list[str] = []
+    devices: list[str] = []
+    create_time: datetime = Field(default_factory=datetime.now)
+    last_update: datetime = Field(default_factory=datetime.now)
 
 
 class UserResponse(BaseModel):
