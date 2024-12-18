@@ -8,7 +8,13 @@ from datetime import datetime
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
 
-class Device(BaseModel):
+class CommonModel(BaseModel):
+    create_time: datetime = Field(default_factory=datetime.now)
+    last_update: datetime = Field(default_factory=datetime.now)
+    deleted: bool = False
+
+
+class Device(CommonModel):
     # The primary key for the UserEvent, stored as a `str` on the instance.
     # This will be aliased to `_id` when sent to MongoDB,
     # but provided as `id` in the API requests and responses.
@@ -16,25 +22,39 @@ class Device(BaseModel):
     device_id: str
     # type_id: str
     data: dict = {}
-    create_time: datetime = Field(default_factory=datetime.now)
-    last_update: datetime = Field(default_factory=datetime.now)
 
 
-class User(BaseModel):
+class DeviceType(CommonModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    name: str = "Movement Sensor"
+    default_attributes: dict = {
+        "light": False,
+        "movement": False
+    }
+
+
+class User(CommonModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     username: str
     password: str
-    create_time: datetime = Field(default_factory=datetime.now)
-    last_update: datetime = Field(default_factory=datetime.now)
+    home_id: str = ""
+    role: str = ""
 
 
-class Home(BaseModel):
+class Home(CommonModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     owner: str
     members: list[str] = []
     devices: list[str] = []
-    create_time: datetime = Field(default_factory=datetime.now)
-    last_update: datetime = Field(default_factory=datetime.now)
+
+
+class Event(CommonModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    commands: list[str]
+
+
+class Command(CommonModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
 
 
 class UserResponse(BaseModel):

@@ -48,6 +48,9 @@ db = mongodb_client.get_database(config.DATABASE)
 device_collection = db.get_collection("devices")
 user_collection = db.get_collection("users")
 home_collection = db.get_collection("homes")
+device_type_collection = db.get_collection("device_types")
+command_collection = db.get_collection("commands")
+event_collection = db.get_collection("events")
 
 
 async def validate_request(request):
@@ -63,7 +66,7 @@ def connect(client: MQTTClient, flags: int, rc: int, properties: Any):
     print("Connected: ", client, flags, rc, properties)
 
 
-@fast_mqtt.subscribe("smart_home/device_data", qos=1)
+@fast_mqtt.subscribe("device_events", qos=1)
 async def home_message(client: MQTTClient, topic: str, payload: bytes, qos: int, properties: Any):
     payload = json.loads(payload.decode())
 
@@ -98,35 +101,12 @@ def subscribe(client: MQTTClient, mid: int, qos: int, properties: Any):
     print("subscribed", client, mid, qos, properties)
 
 
-@app.post("/device/update")
-async def device_update(device: model.Device = Body(...)):
-    result = await device_collection.find_one_and_update(
-        filter={"device_id": device.device_id},
-        update={
-            "$set": {
-                "device_id": device.device_id,
-                "data": device.data,
-                "last_update": datetime.now()
-            }
-        },
-        upsert=True,
-        return_document=True  # Return the updated document, not the original
-    )
-    msg = {
-        "device_id": device_update.device_id,
-        "time": time.time(),
-        "data": device_update.data
-    }
-    fast_mqtt.publish(f"smart_home/device/{result['device_id']}", msg)
-    return result
-
-
-@app.post("/user/register",
-          response_description="Register",
-          response_model=model.UserResponse,
+@app.post("/user",
+          response_description="Register a user",
+          response_model=model.User,
           status_code=status.HTTP_201_CREATED,
           response_model_by_alias=False)
-async def create_user(request: Request, user: model.User = Body(...)):
+async def add_user(request: Request, user: model.User = Body(...)):
     await validate_request(request)
 
     new_user = await user_collection.insert_one(
@@ -135,7 +115,7 @@ async def create_user(request: Request, user: model.User = Body(...)):
     created_user = await user_collection.find_one(
         {"_id": new_user.inserted_id}
     )
-    return model.UserResponse(status=0, message="Success")
+    return created_user
 
 
 @app.post("/user/login",
@@ -143,7 +123,7 @@ async def create_user(request: Request, user: model.User = Body(...)):
           response_model=model.UserResponse,
           status_code=status.HTTP_200_OK,
           response_model_by_alias=False)
-async def create_user(request: Request, user: model.User = Body(...)):
+async def login_user(request: Request, user: model.User = Body(...)):
     await validate_request(request)
 
     found_user = await user_collection.find_one(
@@ -158,12 +138,12 @@ async def create_user(request: Request, user: model.User = Body(...)):
         return model.UserResponse(status=0, message="Success")
 
 
-@app.post("/home/add",
+@app.post("/home",
           response_description="Add a home",
           response_model=model.Home,
           status_code=status.HTTP_201_CREATED,
           response_model_by_alias=False)
-async def create_user(request: Request, home: model.Home = Body(...)):
+async def add_home(request: Request, home: model.Home = Body(...)):
     await validate_request(request)
 
     new_home = await home_collection.insert_one(
@@ -175,25 +155,25 @@ async def create_user(request: Request, home: model.Home = Body(...)):
     return created_home
 
 
-@app.get("/home/{home_id}",
+@app.get("/home/{id}",
          response_description="Get a home",
          response_model=model.Home,
          status_code=status.HTTP_200_OK,
          response_model_by_alias=False)
-async def create_user(request: Request, home_id: str):
+async def get_home(request: Request, id: str):
     await validate_request(request)
 
     return home_collection.find_one(
-        {"_id": home_id}
+        {"_id": id}
     )
 
 
-@app.post("/device/add",
+@app.post("/device",
           response_description="Add a device to a home",
           response_model=model.Device,
           status_code=status.HTTP_201_CREATED,
           response_model_by_alias=False)
-async def create_user(request: Request, device: model.Home = Body(...)):
+async def add_device(request: Request, device: model.Home = Body(...)):
     await validate_request(request)
 
     new_device = await device_collection.insert_one(
@@ -205,14 +185,104 @@ async def create_user(request: Request, device: model.Home = Body(...)):
     return created_device
 
 
-@app.get("/device/{device_id}",
+@app.get("/device/{id}",
          response_description="Get a device",
          response_model=model.Device,
          status_code=status.HTTP_200_OK,
          response_model_by_alias=False)
-async def create_user(request: Request, home_id: str):
+async def get_device(request: Request, id: str):
     await validate_request(request)
 
     return device_collection.find_one(
-        {"_id": home_id}
+        {"_id": id}
+    )
+
+
+@app.post("/device_type",
+          response_description="Add a device type",
+          response_model=model.DeviceType,
+          status_code=status.HTTP_201_CREATED,
+          response_model_by_alias=False)
+async def add_device(request: Request, device_type: model.DeviceType = Body(...)):
+    await validate_request(request)
+
+    new_device_type = await device_type_collection.insert_one(
+        device_type.model_dump(by_alias=True, exclude=["id"])
+    )
+    created_device_type = await device_type_collection.find_one(
+        {"_id": new_device_type.inserted_id}
+    )
+    return created_device_type
+
+
+@app.get("/device_type/{id}",
+         response_description="Get a device",
+         response_model=model.Device,
+         status_code=status.HTTP_200_OK,
+         response_model_by_alias=False)
+async def get_device(request: Request, id: str):
+    await validate_request(request)
+
+    return device_collection.find_one(
+        {"_id": id}
+    )
+
+
+@app.post("/event",
+          response_description="Register an event",
+          response_model=model.Event,
+          status_code=status.HTTP_201_CREATED,
+          response_model_by_alias=False)
+async def add_device(request: Request, event: model.Event = Body(...)):
+    await validate_request(request)
+
+    new_event = await event_collection.insert_one(
+        event.model_dump(by_alias=True, exclude=["id"])
+    )
+    created_event = await event_collection.find_one(
+        {"_id": new_event.inserted_id}
+    )
+    return created_event
+
+
+@app.get("/event/{id}",
+         response_description="Get an event",
+         response_model=model.Event,
+         status_code=status.HTTP_200_OK,
+         response_model_by_alias=False)
+async def get_device(request: Request, id: str):
+    await validate_request(request)
+
+    return device_collection.find_one(
+        {"_id": id}
+    )
+
+
+@app.post("/command",
+          response_description="Add a command",
+          response_model=model.Command,
+          status_code=status.HTTP_201_CREATED,
+          response_model_by_alias=False)
+async def add_device(request: Request, command: model.Command = Body(...)):
+    await validate_request(request)
+
+    new_command = await command_collection.insert_one(
+        command.model_dump(by_alias=True, exclude=["id"])
+    )
+    created_command = await command_collection.find_one(
+        {"_id": new_command.inserted_id}
+    )
+    return created_command
+
+
+@app.get("/command/{id}",
+         response_description="Get a command",
+         response_model=model.Device,
+         status_code=status.HTTP_200_OK,
+         response_model_by_alias=False)
+async def get_device(request: Request, id: str):
+    await validate_request(request)
+
+    return device_collection.find_one(
+        {"_id": id}
     )
