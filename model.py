@@ -19,18 +19,20 @@ class Device(CommonModel):
     # This will be aliased to `_id` when sent to MongoDB,
     # but provided as `id` in the API requests and responses.
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    device_id: str
-    # type_id: str
-    data: dict = {}
+    type_id: str
+    home_id: str
+    attributes: dict = {}
+
+
+class DeviceRegister(BaseModel):
+    home_id: str
+    device_type: str
 
 
 class DeviceType(CommonModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    name: str = "Movement Sensor"
-    default_attributes: dict = {
-        "light": False,
-        "movement": False
-    }
+    name: str
+    default_attributes: dict
 
 
 class User(CommonModel):
@@ -43,18 +45,23 @@ class User(CommonModel):
 
 class Home(CommonModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    owner: str
+    owner_id: str
     members: list[str] = []
     devices: list[str] = []
 
 
 class Event(CommonModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    commands: list[str]
+    device_id: str
+    condition: str
+    commands: list[str] = []
 
 
 class Command(CommonModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    device_id: str
+    code: int
+    code_message: str
 
 
 class UserResponse(BaseModel):

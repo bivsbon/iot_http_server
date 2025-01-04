@@ -1,16 +1,14 @@
 import json
-import time
 from contextlib import asynccontextmanager
+from time import time
 from typing import Any
 
-from fastapi import FastAPI, Body, Query, HTTPException
-from gmqtt import Client as MQTTClient
-
-from fastapi_mqtt import FastMQTT, MQTTConfig
+from bson import ObjectId
+from fastapi import FastAPI, Body, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_mqtt import FastMQTT, MQTTConfig
+from gmqtt import Client as MQTTClient
 from motor import motor_asyncio
-from datetime import datetime
-
 from starlette import status
 from starlette.requests import Request
 
@@ -52,6 +50,38 @@ device_type_collection = db.get_collection("device_types")
 command_collection = db.get_collection("commands")
 event_collection = db.get_collection("events")
 
+# Check if any event is triggered
+# cursor = event_collection.find(
+#     {"device_id": ObjectId("")},
+# )
+# for event in cursor:
+#     print(event)
+
+
+def str_is_number(b: str) -> bool:
+    return b.replace(".", "").isdigit()
+
+
+def str_to_number(b: str) -> int or float:
+    return float(b) if "." in b else int(b)
+
+
+def event_is_triggered(event: dict, device: dict) -> bool:
+    condition = event["condition"]
+    a, operand, b = event["condition"].split(" ")
+    if str_is_number(b):
+        b = str_to_number(b)
+    if operand == "<":
+        return device["attributes"][a] < b
+    elif operand == ">":
+        return device["attributes"][a] > b
+    elif operand == "=":
+        return device["attributes"][a] == b
+    elif operand == "<=":
+        return device["attributes"][a] <= b
+    elif operand == ">=":
+        return device["attributes"][a] >= b
+
 
 async def validate_request(request):
     if config.API_KEY != request.query_params.get("api_key"):
@@ -66,24 +96,32 @@ def connect(client: MQTTClient, flags: int, rc: int, properties: Any):
     print("Connected: ", client, flags, rc, properties)
 
 
-@fast_mqtt.subscribe("device_events", qos=1)
+@fast_mqtt.subscribe("device/state_update", qos=1)
 async def home_message(client: MQTTClient, topic: str, payload: bytes, qos: int, properties: Any):
     payload = json.loads(payload.decode())
 
-    result = await device_collection.find_one_and_update(
-        filter={"device_id": payload["device_id"]},
-        update={
-            "$set": {
-                "device_id": payload["device_id"],
-                "data": payload["data"],
-                "last_update": datetime.now()
-            }
-        },
-        upsert=True,
-        return_document=True  # Return the updated document, not the original
+    result = await device_collection.update_one(
+        {"_id": ObjectId(payload["device_id"])},
+        {"$set": {
+            "attributes": payload["attributes"],
+            "last_update": time()
+        }}
     )
 
-    fast_mqtt.publish(f"smart_home/device/{result['device_id']}", json.dumps(payload))
+    updated_device = await device_collection.find_one(
+        {"_id": payload["device_id"]}
+    )
+
+    # Check if any event is triggered
+    cursor = event_collection.find(
+        {"device_id": ObjectId(payload["device_id"])},
+    )
+    async for event in cursor:
+        if event_is_triggered(event, updated_device):
+            for command_id in event["commands"]:
+                command = await command_collection.find_one({"_id": ObjectId(command_id)})
+                command_payload = {"code": command["code"], "code_message": command["code_message"]}
+                fast_mqtt.publish(f"device/command/{command['device_id']}", json.dumps(command_payload))
 
 
 @fast_mqtt.on_message()
@@ -152,6 +190,13 @@ async def add_home(request: Request, home: model.Home = Body(...)):
     created_home = await home_collection.find_one(
         {"_id": new_home.inserted_id}
     )
+    result = await user_collection.update_one(
+        {"_id": ObjectId(home.owner_id)},
+        {"$set": {
+            "home_id": str(created_home["_id"]),
+            "role": "owner"
+        }}
+    )
     return created_home
 
 
@@ -173,14 +218,24 @@ async def get_home(request: Request, id: str):
           response_model=model.Device,
           status_code=status.HTTP_201_CREATED,
           response_model_by_alias=False)
-async def add_device(request: Request, device: model.Home = Body(...)):
+async def add_device(request: Request, device: model.Device = Body(...)):
     await validate_request(request)
+
+    device_type = await device_type_collection.find_one({"_id": ObjectId(device.type_id)})
+    home = await home_collection.find_one({"_id": ObjectId(device.home_id)})
+
+    device = model.Device(type_id=str(device_type["_id"]),
+                          home_id=str(home["_id"]), attributes=device_type["default_attributes"])
 
     new_device = await device_collection.insert_one(
         device.model_dump(by_alias=True, exclude=["id"])
     )
     created_device = await device_collection.find_one(
         {"_id": new_device.inserted_id}
+    )
+    result = await home_collection.update_one(
+        {"_id": ObjectId(home["_id"])},
+        {"$push": {"devices": str(created_device["_id"])}}
     )
     return created_device
 
@@ -194,7 +249,7 @@ async def get_device(request: Request, id: str):
     await validate_request(request)
 
     return device_collection.find_one(
-        {"_id": id}
+        {"_id": ObjectId(id)}
     )
 
 
@@ -203,7 +258,7 @@ async def get_device(request: Request, id: str):
           response_model=model.DeviceType,
           status_code=status.HTTP_201_CREATED,
           response_model_by_alias=False)
-async def add_device(request: Request, device_type: model.DeviceType = Body(...)):
+async def add_device_type(request: Request, device_type: model.DeviceType = Body(...)):
     await validate_request(request)
 
     new_device_type = await device_type_collection.insert_one(
@@ -220,11 +275,11 @@ async def add_device(request: Request, device_type: model.DeviceType = Body(...)
          response_model=model.Device,
          status_code=status.HTTP_200_OK,
          response_model_by_alias=False)
-async def get_device(request: Request, id: str):
+async def get_device_type(request: Request, id: str):
     await validate_request(request)
 
     return device_collection.find_one(
-        {"_id": id}
+        {"_id": ObjectId(id)}
     )
 
 
@@ -233,7 +288,7 @@ async def get_device(request: Request, id: str):
           response_model=model.Event,
           status_code=status.HTTP_201_CREATED,
           response_model_by_alias=False)
-async def add_device(request: Request, event: model.Event = Body(...)):
+async def add_event(request: Request, event: model.Event = Body(...)):
     await validate_request(request)
 
     new_event = await event_collection.insert_one(
@@ -250,11 +305,11 @@ async def add_device(request: Request, event: model.Event = Body(...)):
          response_model=model.Event,
          status_code=status.HTTP_200_OK,
          response_model_by_alias=False)
-async def get_device(request: Request, id: str):
+async def get_event(request: Request, id: str):
     await validate_request(request)
 
     return device_collection.find_one(
-        {"_id": id}
+        {"_id": ObjectId(id)}
     )
 
 
@@ -263,7 +318,7 @@ async def get_device(request: Request, id: str):
           response_model=model.Command,
           status_code=status.HTTP_201_CREATED,
           response_model_by_alias=False)
-async def add_device(request: Request, command: model.Command = Body(...)):
+async def add_command(request: Request, command: model.Command = Body(...)):
     await validate_request(request)
 
     new_command = await command_collection.insert_one(
@@ -280,9 +335,9 @@ async def add_device(request: Request, command: model.Command = Body(...)):
          response_model=model.Device,
          status_code=status.HTTP_200_OK,
          response_model_by_alias=False)
-async def get_device(request: Request, id: str):
+async def get_command(request: Request, id: str):
     await validate_request(request)
 
     return device_collection.find_one(
-        {"_id": id}
+        {"_id": ObjectId(id)}
     )
