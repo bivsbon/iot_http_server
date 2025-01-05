@@ -106,13 +106,14 @@ async def home_message(client: MQTTClient, topic: str, payload: bytes, qos: int,
     updated_device["_id"] = str(updated_device["_id"])
     updated_device["create_time"] = str(updated_device["create_time"])
 
-    fast_mqtt.publish(f"device/state_update{str(updated_device['_id'])}", updated_device)
+    fast_mqtt.publish(f"device/state_update/{str(updated_device['_id'])}", updated_device)
 
     # Check if any event is triggered
     cursor = event_collection.find(
-        {"device_id": ObjectId(payload["device_id"])},
+        {"device_id": payload["device_id"]},
     )
     async for event in cursor:
+        print(f"condition: {event['condition']}")
         if event_is_triggered(event, updated_device):
             for command_id in event["commands"]:
                 command = await command_collection.find_one({"_id": ObjectId(command_id)})
