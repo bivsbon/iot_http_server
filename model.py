@@ -67,12 +67,3 @@ class Command(CommonModel):
 class UserResponse(BaseModel):
     status: int
     message: str
-
-
-# ------------------------- Request models ---------------------------------
-
-
-class DeviceUpdate(BaseModel):
-    device_id: int
-    time: int
-    data: dict

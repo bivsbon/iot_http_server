@@ -50,13 +50,6 @@ device_type_collection = db.get_collection("device_types")
 command_collection = db.get_collection("commands")
 event_collection = db.get_collection("events")
 
-# Check if any event is triggered
-# cursor = event_collection.find(
-#     {"device_id": ObjectId("")},
-# )
-# for event in cursor:
-#     print(event)
-
 
 def str_is_number(b: str) -> bool:
     return b.replace(".", "").isdigit()
@@ -67,7 +60,6 @@ def str_to_number(b: str) -> int or float:
 
 
 def event_is_triggered(event: dict, device: dict) -> bool:
-    condition = event["condition"]
     a, operand, b = event["condition"].split(" ")
     if str_is_number(b):
         b = str_to_number(b)
@@ -109,8 +101,12 @@ async def home_message(client: MQTTClient, topic: str, payload: bytes, qos: int,
     )
 
     updated_device = await device_collection.find_one(
-        {"_id": payload["device_id"]}
+        {"_id": ObjectId(payload["device_id"])}
     )
+    updated_device["_id"] = str(updated_device["_id"])
+    updated_device["create_time"] = str(updated_device["create_time"])
+
+    fast_mqtt.publish(f"device/state_update{str(updated_device['_id'])}", updated_device)
 
     # Check if any event is triggered
     cursor = event_collection.find(
