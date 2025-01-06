@@ -117,7 +117,7 @@ async def home_message(client: MQTTClient, topic: str, payload: bytes, qos: int,
         if event_is_triggered(event, updated_device):
             for command_id in event["commands"]:
                 command = await command_collection.find_one({"_id": ObjectId(command_id)})
-                command_payload = {"code": command["code"], "code_message": command["code_message"]}
+                command_payload = {"command": {"code": command["code"], "code_message": command["code_message"]}}
                 fast_mqtt.publish(f"device/command/{command['device_id']}", json.dumps(command_payload))
 
 
