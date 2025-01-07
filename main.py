@@ -338,3 +338,15 @@ async def get_command(request: Request, id: str):
     return device_collection.find_one(
         {"_id": ObjectId(id)}
     )
+
+
+@app.post("/command/trigger/{command_id}",
+        response_description="Trigger a command",
+        status_code=status.HTTP_200_OK,
+        response_model_by_alias=False)
+async def trigger_command(command_id: str):
+    command = await command_collection.find_one({"_id": ObjectId(command_id)})
+    payload = {"command": {"code": command["code"], "code_message": command["code_message"]}}
+    fast_mqtt.publish(f"device/command/{command['device_id']}", payload)
+    return {"status": "OK"}
+
